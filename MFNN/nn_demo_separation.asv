@@ -1,0 +1,146 @@
+clear all;
+clc;
+%load wave
+
+isMFNN = 1;
+ 
+SNRs=0;
+[train1 , fs] = wavread('D:\My codes\TNN - CHiMe2\TIMIT-Source Separation\female_train.wav');
+[train2 , fs] = wavread('D:\My codes\TNN - CHiMe2\TIMIT-Source Separation\male_train.wav');
+[valid1 , fs] = wavread('D:\My codes\TNN - CHiMe2\TIMIT-Source Separation\female_dev.wav');
+[valid2 , fs] = wavread('D:\My codes\TNN - CHiMe2\TIMIT-Source Separation\male_dev.wav');
+[test1 , fs]  = wavread('D:\My codes\TNN - CHiMe2\TIMIT-Source Separation\female_test.wav');
+[test2 , fs]  = wavread('D:\My codes\TNN - CHiMe2\TIMIT-Source Separation\male_test.wav');
+
+%window setting
+L = 1024;
+win = 0.064;
+shift = 0.032;
+
+%data prepare
+[mix_train, mix_test, target1, target2, target1_test, target2_test ,mix_test_phase, test1_phase, test2_phase] = mix_signal(train1,train2,test1,test2,SNRs,L,win,shift,fs);
+
+
+ train_frame_size  = length(mix_train(1,:));
+ train_frq_size    = length(mix_train(:,1));
+ test_frame_size   = length(mix_test(1,:));
+ 
+% data with frame n
+shift_size = 1;
+mix_train_add = [];
+mix_train_add = [mix_train(:,((train_frame_size)-shift_size+1):(end)) mix_train mix_train(:,1:shift_size)]; 
+X =[];
+for i = 1:(2*shift_size+1)
+    X(train_frq_size*(i-1)+1:train_frq_size*i,:) = mix_train_add(:,i:train_frame_size+(i-1));
+end
+
+mix_test_add = [];
+mix_test_add = [mix_test(:,(test_frame_size-shift_size+1):(end)) mix_test mix_test(:,1:shift_size)]; 
+X_test =[];
+for i = 1:(2*shift_size+1)
+     X_test(train_frq_size*(i-1)+1:train_frq_size*i,:) = mix_test_add(:,i:test_frame_size+(i-1));
+end
+
+y_target = [target1 ; target2];
+
+context_window = 2*shift_size+1;
+dim            = train_frq_size; 
+%% 
+
+
+opts.batchsize  = 50;
+opts.numepochs      = 500;
+loss_fig   = [];
+
+nn   =  nnsetup([dim*context_window;450;450;450;dim*2]);
+
+nn.activation_function              = 'ReLU';   %  Activation functions of hidden layers: 'sigm' (sigmoid) or 'tanh_opt' (optimal tanh).
+nn.learningRate                     = 0.1;            %  learning rate Note: typically needs to be lower when using 'sigm' activation function and non-normalized inputs.
+nn.momentum                         = 0;          %  Momentum
+nn.scaling_learningRate             = 1;            %  Scaling factor for the learning rate (each epoch)
+nn.weightPenaltyL2                  = 0;            %  L2 regularization
+nn.nonSparsityPenalty               = 0;            %  Non sparsity penalty
+nn.sparsityTarget                   = 0;         %  Sparsity target
+nn.inputZeroMaskedFraction          = 0;            %  Used for Denoising AutoEncoders
+nn.dropoutFraction                  = 0;            %  Dropout level (http://www.cs.toronto.edu/~hinton/absps/dropout.pdf)
+nn.testing                          = 0;            %  Internal variable. nntest sets this to one.
+nn.output                           = 'NN_SCSS';       %  output unit 'sigm' (=logistic), 'softmax' and 'linear'
+
+[nn, L] = nntrain(nn, X(:,1:26700)', y_target(:,1:26700)',mix_train(:,1:26700)',target1(:,1:26700)',target2(:,1:26700)',dim,opts);
+%%
+figure(1);
+plot(loss_fig);
+
+%% test (use test data)
+n = nn.n;
+
+nn = nntest(nn , X_test);
+source = nn.a{n};
+ %%
+ figure(2);
+ imagesc(source),axis xy;
+ %%
+ source = (source-min(min(source))) ./ (max(max(source))-min(min(source))); 
+ 
+ %%
+ figure(3);
+ imagesc(stft_test),axis xy;
+ %%
+ figure(4);
+ imagesc((stft_test_cln)),axis xy;
+ %% Iterative signal reconstruction
+source = source*(max_val_test-min_val_test)+min_val_test;
+%%
+source = exp(source);
+%%
+% source = -log(1./source-1);
+% source = exp(source);
+%%
+source_rec = OLA(source,stft_test_phase,win,shift,fs);
+%%
+source_rec = source_rec./(max(abs(source_rec)));
+%%
+for i = 1:20
+source_rec = OLA(source,stft_test_phase,win,shift,fs);
+stft_test_phase = angle(spectrogram(source_rec,ceil(win*fs),ceil(win*fs)-ceil(shift*fs), L));
+end
+%%
+wavwrite(source_rec,fs,'D:\My codes\TNN - CHiMe2\Final record\reconstruct_nn_far_3L');
+%% visiualize hidden
+
+for i = 1:n
+    figure(i+5);
+    if (i==1)
+        a = 806;
+        b = 966;
+    else
+        a = 801;
+        b = 960;
+    end
+    imagesc(nn.a{i}(:,75)),axis xy;
+end
+%% visiualize hidden
+
+for i = 1:n-1
+    figure(i+15);
+    if(i==1)
+        a=161;
+        b=11;
+    else
+        a=160;
+        b=10;
+    end
+    
+    imagesc(reshape(nn.a{i}(:,75),a,b)),axis xy;
+    
+end
+%% visiualize weight
+for i = 1:n-1
+    figure(i+10);
+    imagesc(nn.W{i}(:,50:100)),axis xy;
+end
+
+
+
+
+

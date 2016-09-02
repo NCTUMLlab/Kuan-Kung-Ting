@@ -1,0 +1,2 @@
+model_MFNN_ReLU_win3_L5_h150x3_450_fullyL3_AdamSGD	testSDR:	5.538	testSIR:	10.207	testSAR:	7.870
+model_MFNN_ReLU_win3_L5_h150x3_450_fullyL3_AdamSGD	devSDR:	6.777	devSIR:	12.277	devSAR:	8.560
